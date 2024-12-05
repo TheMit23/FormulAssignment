@@ -133,7 +133,7 @@ file_path = 'BrandsHatchLayout.csv'  # Update with your file path
 # Read cone positions
 left_points, right_points = read_cones(file_path)
 
-# Calculate weighted midpoints with fewer interpolation points
+# Calculate weighted midpoints with interpolation points
 midpoints = calculate_weighted_midpoints(left_points, right_points, num_interpolated_points=1)
 
 # Optimize the path
