@@ -5,7 +5,7 @@ from scipy.spatial import KDTree
 from scipy.optimize import minimize
 
 def read_cones(file_path):
-    """Reads cone data from a CSV file."""
+   #Reads cone data from a CSV file
     left_points = []
     right_points = []
 
@@ -29,7 +29,7 @@ def read_cones(file_path):
     return np.array(left_points), np.array(right_points)
 
 def calculate_weighted_midpoints(left_points, right_points, num_interpolated_points=2):
-    """Calculate weighted midpoints between left and right cones with fewer interpolation points."""
+    #Calculate weighted midpoints between left and right cones with fewer interpolation points
     tree_left = KDTree(left_points)
     tree_right = KDTree(right_points)
 
@@ -43,15 +43,14 @@ def calculate_weighted_midpoints(left_points, right_points, num_interpolated_poi
 
     midpoints = np.array(midpoints)
 
-    # Add fewer points between midpoints for reduced computational load
+    # Add points between midpoints
     detailed_midpoints = []
     for i in range(len(midpoints) - 1):
         start = midpoints[i]
         end = midpoints[i + 1]
-        # Interpolate fewer points between start and end
         interpolated_points = np.linspace(start, end, num_interpolated_points, endpoint=False)
         detailed_midpoints.extend(interpolated_points)
-    detailed_midpoints.append(midpoints[-1])  # Add the last midpoint
+    detailed_midpoints.append(midpoints[-1])  
 
     return np.array(detailed_midpoints)
 
