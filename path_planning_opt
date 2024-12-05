@@ -1,0 +1,143 @@
+import csv
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.spatial import KDTree
+from scipy.optimize import minimize
+
+def read_cones(file_path):
+    """Reads cone data from a CSV file."""
+    left_points = []
+    right_points = []
+
+    with open(file_path, 'r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            if row:
+                try:
+                    x = float(row[0].strip())
+                    y = float(row[1].strip())
+                    side = row[2].strip()
+                except ValueError:
+                    print(f"Skipping row due to conversion error: {row}")
+                    continue
+
+                if side == 'left':
+                    left_points.append((x, y))
+                elif side == 'right':
+                    right_points.append((x, y))
+
+    return np.array(left_points), np.array(right_points)
+
+def calculate_weighted_midpoints(left_points, right_points, num_interpolated_points=2):
+    """Calculate weighted midpoints between left and right cones with fewer interpolation points."""
+    tree_left = KDTree(left_points)
+    tree_right = KDTree(right_points)
+
+    midpoints = []
+    for lp in left_points:
+        dist, index = tree_right.query(lp)
+        rp = right_points[index]
+        mid_x = (lp[0] + rp[0]) / 2
+        mid_y = (lp[1] + rp[1]) / 2
+        midpoints.append((mid_x, mid_y))
+
+    midpoints = np.array(midpoints)
+
+    # Add fewer points between midpoints for reduced computational load
+    detailed_midpoints = []
+    for i in range(len(midpoints) - 1):
+        start = midpoints[i]
+        end = midpoints[i + 1]
+        # Interpolate fewer points between start and end
+        interpolated_points = np.linspace(start, end, num_interpolated_points, endpoint=False)
+        detailed_midpoints.extend(interpolated_points)
+    detailed_midpoints.append(midpoints[-1])  # Add the last midpoint
+
+    return np.array(detailed_midpoints)
+
+def curvature_cost_with_dynamic_boundaries(path, left_points, right_points, boundary_margin=7):
+    """Cost function to minimize curvature and maintain path within the bounds dynamically."""
+    path = path.reshape(-1, 2)
+    curvature_penalty = 0
+    for i in range(1, len(path) - 1):
+        p_prev, p_curr, p_next = path[i - 1], path[i], path[i + 1]
+        v1 = p_curr - p_prev
+        v2 = p_next - p_curr
+        angle = np.arccos(np.clip(np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2)), -1.0, 1.0))
+        curvature_penalty += angle ** 2
+
+    boundary_penalty = 0
+    for p in path:
+        dist_left = np.min(np.linalg.norm(left_points - p, axis=1))
+        dist_right = np.min(np.linalg.norm(right_points - p, axis=1))
+        if dist_left < boundary_margin:
+            boundary_penalty += (boundary_margin - dist_left) ** 2 * 1000  
+        if dist_right < boundary_margin:
+            boundary_penalty += (boundary_margin - dist_right) ** 2 * 1000
+
+    return curvature_penalty + boundary_penalty
+
+def optimize_path_with_constraints(midpoints, left_points, right_points, boundary_margin=7):
+    """Optimize the path with explicit boundary constraints."""
+    initial_guess = midpoints.flatten()  # Use the detailed midpoints as the initial guess
+
+    def constraint_func(path):
+        path = path.reshape(-1, 2)
+        left_dists = np.linalg.norm(left_points[:, None] - path, axis=2)
+        right_dists = np.linalg.norm(right_points[:, None] - path, axis=2)
+        min_left_dists = np.min(left_dists, axis=0)
+        min_right_dists = np.min(right_dists, axis=0)
+        return np.minimum(min_left_dists - boundary_margin, min_right_dists - boundary_margin)
+
+    constraints = {
+        'type': 'ineq',  # Boundary distances must be >= margin
+        'fun': constraint_func
+    }
+
+    result = minimize(
+        curvature_cost_with_dynamic_boundaries,
+        initial_guess,
+        args=(left_points, right_points, boundary_margin),
+        constraints=constraints,
+        method='SLSQP',
+        options={'disp': True}
+    )
+
+    if not result.success:
+        print(f"Optimization failed: {result.message}")
+
+    optimized_path = result.x.reshape(-1, 2)
+    return optimized_path
+
+def plot_optimized_path(left_points, right_points, optimized_path):
+    """Plot the cones and the final optimized path."""
+    plt.figure(figsize=(10, 6))
+    
+    # Plot cones
+    plt.scatter(left_points[:, 0], left_points[:, 1], label='Left Cones', color='red')
+    plt.scatter(right_points[:, 0], right_points[:, 1], label='Right Cones', color='blue')
+
+    # Plot optimized path
+    if len(optimized_path) > 0:
+        plt.plot(optimized_path[:, 0], optimized_path[:, 1], label='Optimized Path', color='black', linewidth=2, linestyle='-.')
+
+    plt.xlabel('X')
+    plt.ylabel('Y')
+    plt.legend()
+    plt.title('Final Optimized Path')
+    plt.show()
+
+# Main flow
+file_path = 'BrandsHatchLayout.csv'  # Update with your file path
+
+# Read cone positions
+left_points, right_points = read_cones(file_path)
+
+# Calculate weighted midpoints with fewer interpolation points
+midpoints = calculate_weighted_midpoints(left_points, right_points, num_interpolated_points=1)
+
+# Optimize the path
+optimized_path = optimize_path_with_constraints(midpoints, left_points, right_points)
+
+# Plot the final optimized path
+plot_optimized_path(left_points, right_points, optimized_path)
